@@ -296,6 +296,10 @@ export class TestRunner {
           testName: testCase.name
         });
 
+        if (typeof document !== 'undefined') {
+          await new Promise<void>((resolve) => setTimeout(resolve, 8));
+        }
+
         try {
           if (beforeAllError) {
             throw beforeAllError;

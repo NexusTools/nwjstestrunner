@@ -1,6 +1,6 @@
 {
   "name": "@nexustools/nwjstestrunner",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Graphical NW.js Window & Webview Jest-Compatible Test Runner and Harness for NW.js Node.js Applications",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -40,11 +40,17 @@ export class GraphicalOverlayView {
           top: 0;
           left: 0;
           z-index: 1;
+          background: #11111b;
         }
         webview {
           width: 100%;
           height: 100%;
           border: none;
+          background: #11111b;
+          opacity: 0;
+          transition: opacity 0.15s ease-in;
+        }
+        webview.webview-ready {
           opacity: 0.95;
         }
         #test-runner-overlay {
@@ -55,7 +61,7 @@ export class GraphicalOverlayView {
           width: 100vw;
           height: 100vh;
           z-index: 9999;
-          background: rgba(0, 0, 0, 0.28);
+          background: rgba(17, 17, 27, 0.45);
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -182,6 +188,17 @@ export class GraphicalOverlayView {
 
   public getWebviewElement(): any {
     return this.webviewEl;
+  }
+
+  public showWebview(): void {
+    if (this.webviewEl) {
+      if (this.webviewEl.classList) {
+        this.webviewEl.classList.add('webview-ready');
+      }
+      if (this.webviewEl.style) {
+        this.webviewEl.style.opacity = '0.95';
+      }
+    }
   }
 
   public setTitle(title: string): void {

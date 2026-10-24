@@ -22,9 +22,12 @@ export class NwjsGraphicalTestHarness {
   private globalTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private hasStartedExecution = false;
   private hasFinished = false;
+  private domWin: any;
+  private domDoc: Document | undefined;
 
   constructor(config: NwjsHarnessConfig = {}) {
     this.config = config;
+    this.resolveDomContext();
     this.projectRootDir = HarnessConfigLoader.resolveProjectRoot(config.projectRootDir);
 
     const sandboxPrefix = config.sandboxPrefix || 'nwjs-webview-test-';
@@ -38,7 +41,7 @@ export class NwjsGraphicalTestHarness {
       'test-results',
       'desktop-tests.log'
     );
-    const winAny = typeof window !== 'undefined' ? (window as any) : undefined;
+    const winAny = this.domWin;
     const resolvedLogPath =
       config.testLogPath ||
       (winAny && winAny.__testLogPath) ||
@@ -55,6 +58,45 @@ export class NwjsGraphicalTestHarness {
       title: config.overlayTitle || config.title || '🧪 NW.js Live Webview Test Runner',
       enableWebview: this.shouldEnableWebview()
     });
+  }
+
+  private resolveDomContext(): void {
+    let win: any = this.config.window;
+    if (!win && typeof window !== 'undefined') {
+      win = window;
+    }
+    if (!win && typeof (globalThis as any).window !== 'undefined') {
+      win = (globalThis as any).window;
+    }
+    if (!win) {
+      try {
+        const nwGlobal = (globalThis as any).nw;
+        if (nwGlobal && nwGlobal.Window && typeof nwGlobal.Window.get === 'function') {
+          win = nwGlobal.Window.get().window;
+        }
+      } catch (_e) {}
+    }
+
+    let doc: Document | undefined = this.config.document;
+    if (!doc && typeof document !== 'undefined') {
+      doc = document;
+    }
+    if (!doc && typeof (globalThis as any).document !== 'undefined') {
+      doc = (globalThis as any).document;
+    }
+    if (!doc && win && win.document) {
+      doc = win.document;
+    }
+
+    this.domWin = win;
+    this.domDoc = doc;
+
+    if (win && typeof (globalThis as any).window === 'undefined') {
+      (globalThis as any).window = win;
+    }
+    if (doc && typeof (globalThis as any).document === 'undefined') {
+      (globalThis as any).document = doc;
+    }
   }
 
   private getLiveWebviewTests() {
@@ -100,14 +142,37 @@ export class NwjsGraphicalTestHarness {
     return this.testConfigDir;
   }
 
+  private async yieldForPaint(delayMs = 16): Promise<void> {
+    this.resolveDomContext();
+    if (!this.domWin || !this.domDoc) {
+      return;
+    }
+    const winRef = this.domWin;
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (!done) {
+          done = true;
+          resolve();
+        }
+      };
+      setTimeout(finish, delayMs);
+      if (typeof winRef.requestAnimationFrame === 'function') {
+        winRef.requestAnimationFrame(() => setTimeout(finish, 4));
+      }
+    });
+  }
+
   public async start(): Promise<{ exitCode: number; logText: string }> {
+    this.resolveDomContext();
     this.logWriter.writeProgressSnapshot('Tests interupted (Initializing test harness...)');
 
-    if (typeof document !== 'undefined') {
-      this.overlayView.mount(document);
+    if (this.domDoc) {
+      this.overlayView.mount(this.domDoc);
     }
 
     this.setupWindowAndProcessLifecycle();
+    await this.yieldForPaint(24);
 
     const initTimeoutMs = this.config.initTimeoutMs ?? 8000;
     const globalTimeoutMs = this.config.globalTimeoutMs ?? 35000;
@@ -143,7 +208,7 @@ export class NwjsGraphicalTestHarness {
 
       await this.prepareTestSuites();
 
-      if (this.shouldEnableWebview() && typeof document !== 'undefined') {
+      if (this.shouldEnableWebview() && this.domDoc) {
         const webviewEl = this.overlayView.getWebviewElement();
         if (!webviewEl) {
           this.logWriter.recordError(
@@ -194,8 +259,8 @@ export class NwjsGraphicalTestHarness {
       clearTimeout(this.initTimeoutTimer);
       this.initTimeoutTimer = null;
     }
-    if (typeof window !== 'undefined') {
-      const winAny = window as any;
+    if (this.domWin) {
+      const winAny = this.domWin as any;
       winAny.__harnessInitialized = true;
       if (winAny.__initWatchdogTimer) {
         clearTimeout(winAny.__initWatchdogTimer);
@@ -223,16 +288,18 @@ export class NwjsGraphicalTestHarness {
       }
     } catch (_e) {}
 
-    if (typeof window !== 'undefined') {
-      window.onerror = (message, _source, _lineno, _colno, error) => {
+    if (this.domWin) {
+      this.domWin.onerror = (message: any, _source: any, _lineno: any, _colno: any, error: any) => {
         this.logWriter.recordError('HostWindowOnError', error || message);
         this.finishAndExit();
       };
 
-      window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
-        this.logWriter.recordError('HostUnhandledRejection', e.reason);
-        this.finishAndExit();
-      });
+      if (typeof this.domWin.addEventListener === 'function') {
+        this.domWin.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
+          this.logWriter.recordError('HostUnhandledRejection', e.reason);
+          this.finishAndExit();
+        });
+      }
     }
   }
 
@@ -276,8 +343,8 @@ export class NwjsGraphicalTestHarness {
 
   private async prepareTestSuites(): Promise<void> {
     installJestGlobals(globalThis);
-    if (typeof window !== 'undefined') {
-      installJestGlobals(window);
+    if (this.domWin) {
+      installJestGlobals(this.domWin);
     }
 
     const runner = TestRunner.getInstance();
@@ -357,6 +424,8 @@ export class NwjsGraphicalTestHarness {
             'Client screen inside webview failed readiness check within timeout.'
           );
         }
+        this.overlayView.showWebview();
+        await this.yieldForPaint(16);
       }
 
       if (unitCount > 0) {
@@ -432,6 +501,7 @@ export class NwjsGraphicalTestHarness {
 
           const m = this.logWriter.getMetrics();
           this.overlayView.updateMetrics(completedSoFar, totalTests, m.passedCount, m.failedCount);
+          await this.yieldForPaint(8);
         }
       }
 
@@ -443,6 +513,7 @@ export class NwjsGraphicalTestHarness {
         finalMetrics.passedCount,
         finalMetrics.failedCount
       );
+      await this.yieldForPaint(32);
     } catch (err) {
       this.logWriter.recordError('TestRunnerExecution', err);
     }
@@ -456,10 +527,10 @@ export class NwjsGraphicalTestHarness {
     }
     this.hasFinished = true;
 
-    if (typeof window !== 'undefined') {
-      (window as any).__harnessCompleted = true;
-      if ((window as any).__initWatchdogTimer) {
-        clearTimeout((window as any).__initWatchdogTimer);
+    if (this.domWin) {
+      (this.domWin as any).__harnessCompleted = true;
+      if ((this.domWin as any).__initWatchdogTimer) {
+        clearTimeout((this.domWin as any).__initWatchdogTimer);
       }
     }
 

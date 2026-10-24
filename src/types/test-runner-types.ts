@@ -335,6 +335,14 @@ export interface NwjsHarnessConfig {
    * Keep the graphical NW.js window open after test completion for visual inspection (default: false).
    */
   keepOpen?: boolean;
+  /**
+   * Optional DOM Window reference passed from the NW.js renderer context (bridges NW.js Separate Context Mode).
+   */
+  window?: any;
+  /**
+   * Optional DOM Document reference passed from the NW.js renderer context (bridges NW.js Separate Context Mode).
+   */
+  document?: any;
 }
 
 export interface NwjsCliOptions {

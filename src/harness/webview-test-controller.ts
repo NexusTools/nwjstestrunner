@@ -131,13 +131,28 @@ export class WebviewTestController {
     return new Promise<WebviewExecutionResult>((resolve) => {
       let finished = false;
 
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (!finished) {
           finished = true;
+          let extraInfo = '';
+          try {
+            const rawState = await this.execScriptWithTimeout(
+              `(function() { return JSON.stringify({ step: window.__testStep || null, errors: window.__testErrors || [] }); })();`,
+              300
+            );
+            if (rawState) {
+              const parsed = JSON.parse(rawState);
+              if (parsed.step) extraInfo += ` (last step: ${parsed.step})`;
+              if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+                extraInfo += ` [errors: ${parsed.errors.join('; ')}]`;
+              }
+            }
+          } catch (_e) {}
+          const msg = `Test timed out after ${timeoutMs}ms${extraInfo}`;
           resolve({
             ok: false,
-            errors: [`Test timed out after ${timeoutMs}ms`],
-            error: `Test timed out after ${timeoutMs}ms`
+            errors: [msg],
+            error: msg
           });
         }
       }, timeoutMs);
