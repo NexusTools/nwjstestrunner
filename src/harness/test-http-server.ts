@@ -56,7 +56,15 @@ export class TestHttpServer {
     const defaultEntry = this.options.defaultEntryFile || 'index.html';
     const host = this.options.host || '127.0.0.1';
     const port = this.options.port ?? 0;
-    const ignore404 = new Set(this.options.ignore404Paths ?? ['/favicon.ico']);
+    const ignore404List = this.options.ignore404Paths ?? ['/favicon.ico'];
+    const isIgnored404 = (p: string): boolean => {
+      for (const pattern of ignore404List) {
+        if (pattern === p) return true;
+        if (pattern.endsWith('*') && p.startsWith(pattern.slice(0, -1))) return true;
+        if (pattern.endsWith('/') && p.startsWith(pattern)) return true;
+      }
+      return false;
+    };
     const mimeTypes: Record<string, string> = {
       ...DEFAULT_MIME_TYPES,
       ...(this.options.customMimeTypes || {})
@@ -111,7 +119,7 @@ export class TestHttpServer {
           return;
         }
 
-        if (!ignore404.has(reqPath) && this.options.onHttp404) {
+        if (!isIgnored404(reqPath) && this.options.onHttp404) {
           this.options.onHttp404(reqPath, filePath);
         }
 

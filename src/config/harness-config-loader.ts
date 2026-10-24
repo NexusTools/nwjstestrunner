@@ -12,11 +12,25 @@ export class HarnessConfigLoader {
       return path.resolve(envRoot);
     }
     const cwd = process.cwd();
-    if (path.basename(cwd).toLowerCase() === 'testrunner' || path.basename(cwd).toLowerCase() === 'runner') {
-      const parentPkg = path.resolve(cwd, '..', 'package.json');
-      if (fs.existsSync(parentPkg)) {
-        return path.resolve(cwd, '..');
+    let current = cwd;
+    for (let i = 0; i < 6; i++) {
+      const base = path.basename(current).toLowerCase();
+      const pkgPath = path.join(current, 'package.json');
+      let isRunnerPkg = base === 'testrunner' || base === 'runner';
+      if (!isRunnerPkg && fs.existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+          if (pkg && typeof pkg.name === 'string' && pkg.name.toLowerCase().includes('testrunner')) {
+            isRunnerPkg = true;
+          }
+        } catch (_e) {}
       }
+      if (!isRunnerPkg && fs.existsSync(pkgPath)) {
+        return current;
+      }
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
     }
     return cwd;
   }

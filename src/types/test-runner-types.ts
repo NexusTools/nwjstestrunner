@@ -226,6 +226,10 @@ export interface NwjsHarnessConfig {
    */
   title?: string;
   /**
+   * Optional separate display title in the graphical overlay card.
+   */
+  overlayTitle?: string;
+  /**
    * Header title written into desktop-tests.log.
    * E.g. "HAEditor Desktop Client Test Harness Log"
    */
@@ -271,6 +275,14 @@ export interface NwjsHarnessConfig {
    */
   webviewEntryHtml?: string;
   /**
+   * Direct URL to load into the `<webview>` instead of starting the local static HTTP server (e.g., `"http://127.0.0.1:55522/"`).
+   */
+  webviewUrl?: string;
+  /**
+   * Optional hook invoked before the harness initializes test suites or the `<webview>`.
+   */
+  beforeStart?: (context: { projectRootDir: string; sandboxDir: string; configDir: string }) => Promise<void> | void;
+  /**
    * Custom query parameters appended to the `<webview>` URL (`projectRoot` and `configDir` are included automatically unless disabled).
    */
   webviewQueryParams?: Record<string, string>;
@@ -295,6 +307,10 @@ export interface NwjsHarnessConfig {
    */
   screenLoadOptions?: WaitForScreenLoadOptions;
   /**
+   * Shorthand JavaScript expression/IIFE evaluated inside the `<webview>` until it returns truthy.
+   */
+  waitForReadyScript?: string;
+  /**
    * Callback to programmatically register suites on the `TestRunner` instance.
    */
   registerSuites?: (runner: any, context: { projectRootDir: string; sandboxDir: string; configDir: string }) => Promise<void> | void;
@@ -307,6 +323,10 @@ export interface NwjsHarnessConfig {
    * Live DOM integration tests to execute sequentially inside the `<webview>`.
    */
   liveWebviewTests?: WebviewLiveTestSpec[];
+  /**
+   * Alias for `liveWebviewTests`: Live DOM integration tests to execute sequentially inside the `<webview>`.
+   */
+  webviewTests?: WebviewLiveTestSpec[];
   /**
    * Whether to automatically call `process.exit(exitCode)` when tests complete (default: true).
    */

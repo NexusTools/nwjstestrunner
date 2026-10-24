@@ -91,6 +91,8 @@ export class WebviewTestController {
     const requiredSelectors = options.requiredSelectors ?? [];
     const customPredicate = options.customPredicateCode;
 
+    const cleanedPredicate = customPredicate ? customPredicate.trim().replace(/;+$/, '') : '';
+
     const maxAttempts = Math.max(1, Math.ceil(timeoutMs / pollIntervalMs));
     const checkScript = `
       (function() {
@@ -105,7 +107,7 @@ export class WebviewTestController {
         for (let i = 0; i < reqSels.length; i++) {
           if (!document.querySelector(reqSels[i])) return false;
         }
-        ${customPredicate ? `return Boolean(${customPredicate});` : 'return true;'}
+        ${cleanedPredicate ? `return Boolean(${cleanedPredicate});` : 'return true;'}
       })();
     `;
 

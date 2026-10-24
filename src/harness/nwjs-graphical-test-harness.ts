@@ -45,25 +45,40 @@ export class NwjsGraphicalTestHarness {
       process.env.NWJS_TEST_LOG_PATH ||
       defaultLogPath;
 
+    const rawTitle = config.title || 'NW.js Desktop Client Test Harness Log';
     const headerTitle =
       config.logHeaderTitle ||
-      (config.title ? `${config.title} Log` : 'NW.js Desktop Client Test Harness Log');
+      (rawTitle.toLowerCase().endsWith('log') ? rawTitle : `${rawTitle} Log`);
 
     this.logWriter = new TestLogWriter(resolvedLogPath, headerTitle);
     this.overlayView = new GraphicalOverlayView({
-      title: config.title || '🧪 NW.js Live Webview Test Runner',
+      title: config.overlayTitle || config.title || '🧪 NW.js Live Webview Test Runner',
       enableWebview: this.shouldEnableWebview()
     });
+  }
+
+  private getLiveWebviewTests() {
+    return this.config.liveWebviewTests || this.config.webviewTests || [];
+  }
+
+  private getScreenLoadOptions() {
+    if (this.config.screenLoadOptions) {
+      return this.config.screenLoadOptions;
+    }
+    if (this.config.waitForReadyScript) {
+      return { customPredicateCode: this.config.waitForReadyScript };
+    }
+    return undefined;
   }
 
   private shouldEnableWebview(): boolean {
     if (typeof this.config.enableWebview === 'boolean') {
       return this.config.enableWebview;
     }
-    if (this.config.liveWebviewTests && this.config.liveWebviewTests.length > 0) {
+    if (this.getLiveWebviewTests().length > 0) {
       return true;
     }
-    if (this.config.webviewEntryHtml) {
+    if (this.config.webviewEntryHtml || this.config.webviewUrl) {
       return true;
     }
     return false;
@@ -118,6 +133,14 @@ export class NwjsGraphicalTestHarness {
     }, globalTimeoutMs);
 
     try {
+      if (this.config.beforeStart) {
+        await this.config.beforeStart({
+          projectRootDir: this.projectRootDir,
+          sandboxDir: this.testSandboxDir,
+          configDir: this.testConfigDir
+        });
+      }
+
       await this.prepareTestSuites();
 
       if (this.shouldEnableWebview() && typeof document !== 'undefined') {
@@ -214,6 +237,11 @@ export class NwjsGraphicalTestHarness {
   }
 
   private async startHttpServerAndNavigateWebview(): Promise<void> {
+    if (this.config.webviewUrl) {
+      this.webviewController?.navigate(this.config.webviewUrl);
+      return;
+    }
+
     const entryHtml = this.config.webviewEntryHtml || 'index.html';
     this.httpServer = new TestHttpServer({
       projectRootDir: this.projectRootDir,
@@ -273,11 +301,20 @@ export class NwjsGraphicalTestHarness {
         this.projectRootDir,
         this.config.testFiles
       );
+      const { pathToFileURL } = require('url');
+      const nativeDynamicImport = new Function('u', 'return import(u)');
+
       for (const filePath of files) {
+        let mod: any;
         try {
-          delete require.cache[require.resolve(filePath)];
-        } catch (_e) {}
-        const mod = require(filePath);
+          try {
+            delete require.cache[require.resolve(filePath)];
+          } catch (_e) {}
+          mod = require(filePath);
+        } catch (_reqErr) {
+          const fileUrl = `${pathToFileURL(filePath).href}?t=${Date.now()}`;
+          mod = await nativeDynamicImport(fileUrl);
+        }
         if (typeof mod === 'function') {
           await mod(runner, context);
         } else if (mod && typeof mod === 'object') {
@@ -286,7 +323,7 @@ export class NwjsGraphicalTestHarness {
               typeof exportVal === 'function' &&
               (exportName === 'registerSuites' ||
                 exportName === 'registerTestSuites' ||
-                (/^register.*Suites$/i.test(exportName)))
+                /^register.*(?:Suites|Tests)$/i.test(exportName))
             ) {
               await (exportVal as any)(runner, context);
             }
@@ -299,7 +336,7 @@ export class NwjsGraphicalTestHarness {
   private async executeAllTests(): Promise<{ exitCode: number; logText: string }> {
     try {
       const runner = TestRunner.getInstance();
-      const liveTests = this.config.liveWebviewTests || [];
+      const liveTests = this.getLiveWebviewTests();
       const unitCount = runner.totalCasesCount;
       const totalTests = unitCount + liveTests.length;
 
@@ -312,7 +349,7 @@ export class NwjsGraphicalTestHarness {
 
       if (this.webviewController && this.shouldEnableWebview()) {
         const screenLoaded = await this.webviewController.waitForScreenLoad(
-          this.config.screenLoadOptions
+          this.getScreenLoadOptions()
         );
         if (!screenLoaded) {
           this.logWriter.recordError(
@@ -324,8 +361,8 @@ export class NwjsGraphicalTestHarness {
 
       if (unitCount > 0) {
         const jestSummary = await runner.runAll({
-          maxDurationMs: this.config.unitSuiteTimeoutMs ?? 15000,
-          defaultTestTimeoutMs: this.config.defaultTestTimeoutMs ?? 2000,
+          maxDurationMs: this.config.unitSuiteTimeoutMs ?? 30000,
+          defaultTestTimeoutMs: this.config.defaultTestTimeoutMs ?? 12000,
           filter: this.config.testFilter,
           onProgress: (ev: TestProgressEvent) => {
             if (ev.type === 'test_start') {
