@@ -1,0 +1,58 @@
+{
+  "name": "@nexustools/nwjstestrunner",
+  "version": "1.0.0-beta.1",
+  "description": "Graphical NW.js Window & Webview Jest-Compatible Test Runner and Harness for NW.js Node.js Applications",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "nwjstestrunner": "./bin/nwjstestrunner.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/esm/index.mjs",
+      "default": "./dist/index.js"
+    },
+    "./runner/*": "./runner/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "bin",
+    "runner",
+    "README.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/generate-esm-wrapper.js",
+    "test": "npm run build && node ./bin/nwjstestrunner.js --config ./nwjstestrunner.config.cjs",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NexusTools/nwjstestrunner.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta"
+  },
+  "keywords": [
+    "nwjs",
+    "nw.js",
+    "jest",
+    "test-runner",
+    "webview",
+    "graphical-test-runner",
+    "desktop-testing",
+    "nexustools"
+  ],
+  "author": "NexusTools",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "nw": "^0.115.0",
+    "typescript": "^5.7.0"
+  }
+}

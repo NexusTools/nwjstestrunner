@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NW.js Graphical Webview Test Harness</title>
+  <style id="nwjstestrunner-styles">
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #11111b;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    }
+
+    #webview-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    webview {
+      width: 100%;
+      height: 100%;
+      border: none;
+      opacity: 0.95;
+    }
+
+    #test-runner-overlay {
+      pointer-events: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 9999;
+      background: rgba(0, 0, 0, 0.28);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #cdd6f4;
+      text-align: center;
+    }
+
+    .overlay-card {
+      background: #1e1e2e;
+      border: 1px solid #313244;
+      padding: 30px 45px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+      min-width: 440px;
+      max-width: 560px;
+    }
+
+    .overlay-title {
+      font-size: 22px;
+      font-weight: bold;
+      margin-bottom: 12px;
+      color: #cba6f7;
+    }
+
+    .overlay-status {
+      font-size: 14px;
+      margin-bottom: 14px;
+      color: #89b4fa;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 460px;
+    }
+
+    .overlay-progress-track {
+      width: 100%;
+      height: 6px;
+      background: #313244;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .overlay-progress-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #89b4fa, #cba6f7);
+      transition: width 0.12s ease-out;
+    }
+
+    .overlay-metric {
+      font-size: 18px;
+      margin: 8px 0;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .status-running { color: #89b4fa; }
+    .status-passed { color: #a6e3a1; }
+    .status-failed { color: #f38ba8; }
+  </style>
+</head>
+<body>
+  <div id="webview-container">
+    <webview id="client-webview" allownw partition="trusted"></webview>
+  </div>
+
+  <div id="test-runner-overlay">
+    <div class="overlay-card">
+      <div id="overlay-title" class="overlay-title">🧪 NW.js Live Webview Test Runner</div>
+      <div id="overlay-status" class="overlay-status">Initializing test harness...</div>
+      <div class="overlay-progress-track">
+        <div id="overlay-progress-fill" class="overlay-progress-fill"></div>
+      </div>
+      <div class="overlay-metric status-running">
+        <span>Completed:</span>
+        <span id="metric-current">0 of 0</span>
+      </div>
+      <div class="overlay-metric status-passed">
+        <span>✅ Tests Passed:</span>
+        <span id="metric-passed">0</span>
+      </div>
+      <div class="overlay-metric status-failed">
+        <span>❌ Tests Failed:</span>
+        <span id="metric-failed">0</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Bootstrap logger & initialization watchdog (isolated in its own <script> block so even a syntax error in the main harness script is caught and logged)
+    (function() {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const projectRootDir = process.env.NWJS_TEST_PROJECT_ROOT || process.cwd();
+        const defaultResultsDir = path.join(projectRootDir, 'testrunner', 'test-results');
+        const testLogPath = process.env.NWJS_TEST_LOG_PATH || path.join(defaultResultsDir, 'desktop-tests.log');
+        fs.mkdirSync(path.dirname(testLogPath), { recursive: true });
+
+        window.__testLogPath = testLogPath;
+        window.__harnessInitialized = false;
+        window.__harnessCompleted = false;
+
+        // Immediately write "Tests interupted" on startup so if the window is closed by the user or crashes early, there is always readable output
+        fs.writeFileSync(
+          testLogPath,
+          [
+            '==================================================',
+            'NW.js Desktop Client Test Harness Log',
+            '==================================================',
+            'Started at: ' + new Date().toISOString(),
+            'Status: Tests interupted'
+          ].join('\n'),
+          'utf-8'
+        );
+
+        window.__appendBootstrapFailure = function(source, err) {
+          try {
+            const msg = '[ERROR][' + source + '] ' + (err && (err.stack || err.message) ? (err.stack || err.message) : String(err));
+            fs.writeFileSync(
+              testLogPath,
+              [
+                '==================================================',
+                'NW.js Desktop Client Test Harness Log',
+                '==================================================',
+                'Interrupted at: ' + new Date().toISOString(),
+                'Status: Tests interupted',
+                'FAILURES & ERRORS:',
+                msg
+              ].join('\n'),
+              'utf-8'
+            );
+          } catch (_e) {}
+        };
+
+        window.__initWatchdogTimer = setTimeout(function() {
+          if (!window.__harnessInitialized) {
+            window.__appendBootstrapFailure('InitializationTimeout', 'Tests interupted: Test runner stuck at initializing and timed out after 8 seconds.');
+            process.exit(1);
+          }
+        }, 8000);
+
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (!window.__harnessInitialized) {
+            window.__appendBootstrapFailure('BootstrapWindowOnError', error || (message + ' (' + source + ':' + lineno + ':' + colno + ')'));
+            process.exit(1);
+          }
+        };
+      } catch (_bootErr) {}
+    })();
+  </script>
+  <script>
+    (function() {
+      try {
+        const path = require('path');
+        const pkgRoot = process.env.NWJS_TEST_PACKAGE_ROOT || path.resolve(process.cwd());
+        let runnerLib;
+        try {
+          runnerLib = require(path.join(pkgRoot, 'dist', 'index.js'));
+        } catch (_e) {
+          runnerLib = require('@nexustools/nwjstestrunner');
+        }
+
+        const { HarnessConfigLoader, NwjsGraphicalTestHarness } = runnerLib;
+        const config = HarnessConfigLoader.loadConfig();
+        const harness = new NwjsGraphicalTestHarness(config);
+        harness.start();
+      } catch (err) {
+        if (window.__appendBootstrapFailure) {
+          window.__appendBootstrapFailure('BootstrapLoadError', err);
+        }
+        process.exit(1);
+      }
+    })();
+  </script>
+</body>
+</html>
